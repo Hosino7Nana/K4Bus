@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -18,21 +19,33 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # GitHub 的 ubuntu-latest 已预装 Android SDK，这里只补齐 compileSdk 34 需要的组件，
+      # 不再依赖 android-actions/setup-android（那一步下载 cmdline-tools 经常失败）。
+      - name: Ensure Android SDK 34
+        run: |
+          set -x
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "SDK=$SDK"
+          ls "$SDK" || true
+          SM="$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1)"
+          echo "sdkmanager=$SM"
+          if [ -n "$SM" ]; then
+            yes | "$SM" --licenses >/dev/null 2>&1 || true
+            "$SM" "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
+          fi
+          ls "$SDK/platforms" || true
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Generate wrapper and build debug APK
-        run: |
-          gradle wrapper --gradle-version 8.7
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: k4-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
